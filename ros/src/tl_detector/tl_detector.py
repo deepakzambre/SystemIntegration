@@ -12,6 +12,8 @@ import cv2
 import yaml
 import math
 import uuid
+import numpy as np
+from scipy.spatial import KDTree
 
 STATE_COUNT_THRESHOLD = 3
 GENERATE_DATASET = True
@@ -56,7 +58,7 @@ class TLDetector(object):
         self.state_count = 0
 
         if GENERATE_DATASET:
-            self.dataset_file = open('~/images/img_dataset.tsv')
+            self.dataset_file = open('/home/deepak/images/img_dataset.tsv', 'a')
 
         rospy.spin()
 
@@ -138,7 +140,7 @@ class TLDetector(object):
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
         if GENERATE_DATASET and self.state != light.state:
             filname = str(uuid.uuid4()) + '.jpg'
-            filepath = '~/images/' + filname
+            filepath = '/home/deepak/images/' + filname
             cv2.imwrite(filepath, cv_image)
             dataset_file.write(filname + "\t" + str(light.state) + "\n")
         return light.state

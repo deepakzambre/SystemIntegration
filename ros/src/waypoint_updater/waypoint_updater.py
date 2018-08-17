@@ -5,6 +5,8 @@ from geometry_msgs.msg import PoseStamped
 from styx_msgs.msg import Lane, Waypoint
 
 import math
+import numpy as np
+from scipy.spatial import KDTree
 
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
@@ -58,8 +60,8 @@ class WaypointUpdater(object):
         if (closest_idx > 0):
             prev_coord = self.waypoints_2d[closest_idx - 1]
 
-            cl_vect = np.array[closest_coord]
-            prev_vect = np.array[prev_coord]
+            cl_vect = np.array(closest_coord)
+            prev_vect = np.array(prev_coord)
             pos_vect = np.array([x, y])
 
             val = np.dot(cl_vect - prev_vect, pos_vect - cl_vect)
