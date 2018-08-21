@@ -18,6 +18,10 @@ import rospkg
 import os
 
 STATE_COUNT_THRESHOLD = 3
+LIGHT_DISTANCE_THRESHOLD = 50
+
+GENERATE_DATASET = True
+IMAGE_CAPTURE_DISTANCE = 100
 
 class TLDetector(object):
     def __init__(self):
@@ -31,13 +35,13 @@ class TLDetector(object):
         self.camera_image = None
         self.lights = []
 
-        self.generate_dataset = True
         self.dataset_path = rospkg.get_ros_package_path().split(':')[0] + '/images/'
-        if self.generate_dataset:
+        if GENERATE_DATASET:
             if not os.path.exists(self.dataset_path):
                 os.makedirs(self.dataset_path)
             rospy.loginfo("Dataset will be created at %s", self.dataset_path)
             self.dataset_file = open(self.dataset_path + 'img_dataset.tsv', 'a')
+            self.image_write_ts = rospy.Time()
 
         sub1 = rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         sub2 = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
@@ -134,24 +138,30 @@ class TLDetector(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
-        # if(not self.has_image):
-        #     self.prev_light_loc = None
-        #     return False
+        if(not self.has_image):
+            self.prev_light_loc = None
+            return False
 
-        # cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
-
-        # #Get classification
-        # return self.light_classifier.get_classification(cv_image)
-
-        rospy.logdebug("light state is: %s", light.state)
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
-        if self.generate_dataset and self.has_image and self.state != light.state:
+
+        #Get classification
+        return self.light_classifier.get_classification(cv_image)
+
+    def try_image_capture(self, light, light_distance):
+
+        if light_distance > IMAGE_CAPTURE_DISTANCE:
+            return
+
+        cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+        curr_time = rospy.get_rostime()
+        if self.has_image and (self.state != light.state or rospy.Time.now() >= (self.image_write_ts + rospy.Duration(0.2))):
+            self.image_write_ts = rospy.Time.now()
             filname = str(uuid.uuid4()) + '.jpg'
             filepath = self.dataset_path + filname
             cv2.imwrite(filepath, cv_image)
-            dataset_file.write(filname + "\t" + str(light.state) + "\n")
+            self.dataset_file.write(filname + "\t" + str(light.state) + "\n")
 
-        return light.state
+        return
 
     def process_traffic_lights(self):
         """Finds closest visible traffic light, if one exists, and determines its
@@ -162,34 +172,40 @@ class TLDetector(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
+        light_distance = float('inf')
         closest_light = None
-        closest_light_wp_idx = None
 
         # List of positions that correspond to the line to stop in front of for a given intersection
         stop_line_positions = self.config['stop_line_positions']
         if not None in (self.pose, self.previous_pose):
 
-            light_distance = float('inf')
-            for idx, light in enumerate(this.lights):
+            for idx, light in enumerate(self.lights):
                 stop_line_position = stop_line_positions[idx]
 
-                diff_x = self.pose.pose.x - stop_line_position[0]
-                diff_y = self.pose.pose.y - stop_line_position[1]
+                diff_x = self.pose.pose.position.x - stop_line_position[0]
+                diff_y = self.pose.pose.position.y - stop_line_position[1]
                 distance = math.sqrt(diff_x * diff_x + diff_y * diff_y)
 
-                previous_car_vect = np.array([self.previous_pose.x, self.previous_pose.y])
-                car_vect = np.array([self.pose.pose.x, self.pose.pose.y])
-                light_vect = np.array[stop_line_position[0], stop_line_position[1]]
+                previous_car_vect = np.array([self.previous_pose.pose.position.x, self.previous_pose.pose.position.y])
+                car_vect = np.array([self.pose.pose.position.x, self.pose.pose.position.y])
+                light_vect = np.array([stop_line_position[0], stop_line_position[1]])
 
                 val = np.dot(light_vect - car_vect, car_vect - previous_car_vect)
-                if val > 0 and distance < light_distance: # TODO: deepakz : and distance < threshold
+                if val > 0 and distance < light_distance:
                     light_distance = distance
                     closest_light = light
-                    closest_light_wp_idx = self.get_closest_waypoint(stop_line_position[0], stop_line_position[1])
+
 
         if closest_light:
-            light_state = self.get_light_state(closest_light)
-            return closest_light_wp_idx, light_state
+
+            if GENERATE_DATASET:
+                self.try_image_capture(closest_light, light_distance)
+
+            if light_distance < LIGHT_DISTANCE_THRESHOLD:
+                rospy.logdebug("next %s light @ %s m distance", str(closest_light.state), light_distance)
+                light_state = self.get_light_state(closest_light)
+                closest_light_wp_idx = self.get_closest_waypoint(stop_line_position[0], stop_line_position[1])
+                return closest_light_wp_idx, light_state
 
         return -1, TrafficLight.UNKNOWN
 
