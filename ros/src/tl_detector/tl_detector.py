@@ -14,13 +14,14 @@ import math
 import uuid
 import numpy as np
 from scipy.spatial import KDTree
+import rospkg
+import os
 
 STATE_COUNT_THRESHOLD = 3
-GENERATE_DATASET = True
 
 class TLDetector(object):
     def __init__(self):
-        rospy.init_node('tl_detector')
+        rospy.init_node('tl_detector', log_level=rospy.DEBUG)
 
         self.pose = None
         self.previous_pose = None
@@ -29,6 +30,14 @@ class TLDetector(object):
         self.waypoint_tree = None
         self.camera_image = None
         self.lights = []
+
+        self.generate_dataset = True
+        self.dataset_path = rospkg.get_ros_package_path().split(':')[0] + '/images/'
+        if self.generate_dataset:
+            if not os.path.exists(self.dataset_path):
+                os.makedirs(self.dataset_path)
+            rospy.loginfo("Dataset will be created at %s", self.dataset_path)
+            self.dataset_file = open(self.dataset_path + 'img_dataset.tsv', 'a')
 
         sub1 = rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         sub2 = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
@@ -56,9 +65,6 @@ class TLDetector(object):
         self.last_state = TrafficLight.UNKNOWN
         self.last_wp = -1
         self.state_count = 0
-
-        if GENERATE_DATASET:
-            self.dataset_file = open('/home/deepak/images/img_dataset.tsv', 'a')
 
         rospy.spin()
 
@@ -137,12 +143,14 @@ class TLDetector(object):
         # #Get classification
         # return self.light_classifier.get_classification(cv_image)
 
+        rospy.logdebug("light state is: %s", light.state)
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
-        if GENERATE_DATASET and self.state != light.state:
+        if self.generate_dataset and self.has_image and self.state != light.state:
             filname = str(uuid.uuid4()) + '.jpg'
-            filepath = '/home/deepak/images/' + filname
+            filepath = self.dataset_path + filname
             cv2.imwrite(filepath, cv_image)
             dataset_file.write(filname + "\t" + str(light.state) + "\n")
+
         return light.state
 
     def process_traffic_lights(self):
@@ -161,7 +169,7 @@ class TLDetector(object):
         stop_line_positions = self.config['stop_line_positions']
         if not None in (self.pose, self.previous_pose):
 
-            light_distance = float(inf)
+            light_distance = float('inf')
             for idx, light in enumerate(this.lights):
                 stop_line_position = stop_line_positions[idx]
 
