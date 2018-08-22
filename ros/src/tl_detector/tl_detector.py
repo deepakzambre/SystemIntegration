@@ -173,6 +173,7 @@ class TLDetector(object):
 
         """
         light_distance = float('inf')
+        stop_line_idx = -1
         closest_light = None
 
         # List of positions that correspond to the line to stop in front of for a given intersection
@@ -194,6 +195,7 @@ class TLDetector(object):
                 if val > 0 and distance < light_distance:
                     light_distance = distance
                     closest_light = light
+                    stop_line_idx = idx
 
 
         if closest_light:
@@ -204,6 +206,7 @@ class TLDetector(object):
             if light_distance < LIGHT_DISTANCE_THRESHOLD:
                 rospy.logdebug("next %s light @ %s m distance", str(closest_light.state), light_distance)
                 light_state = self.get_light_state(closest_light)
+                stop_line_position = stop_line_positions[stop_line_idx]
                 closest_light_wp_idx = self.get_closest_waypoint(stop_line_position[0], stop_line_position[1])
                 return closest_light_wp_idx, light_state
 
